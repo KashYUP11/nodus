@@ -5,11 +5,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
+# Install only production dependencies to save space/memory
 RUN npm install
-
-# Explicitly install Playwright browsers
-RUN npx playwright install --with-deps chromium
 
 # Copy source code
 COPY . .
@@ -22,6 +19,8 @@ EXPOSE 4001
 
 # Production environment
 ENV NODE_ENV=production
+# This tells Playwright to use the browsers already built into the image
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Start the server
 CMD ["npm", "start"]
