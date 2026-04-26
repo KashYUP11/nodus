@@ -1,0 +1,7 @@
+node_modules/
+.next/
+api_key.txt
+.env
+apps/runner/.env
+.idea/
+package-lock.json
