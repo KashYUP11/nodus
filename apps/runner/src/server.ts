@@ -717,9 +717,20 @@ app.post("/execute", async (req, res) => {
 
   try {
     const isProd = process.env.NODE_ENV === "production";
+    
+    console.log(`Starting execution... Mode: ${isProd ? "Headless" : "Headful"}`);
+    
     const browser = await chromium.launch({ 
       headless: isProd,
-      args: isProd ? ["--no-sandbox", "--disable-setuid-sandbox"] : []
+      args: [
+        "--no-sandbox", 
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-accelerated-2d-canvas",
+        "--no-first-run",
+        "--no-zygote",
+        "--disable-gpu"
+      ]
     });
     const context = await browser.newContext();
     const page = await context.newPage();
