@@ -295,7 +295,7 @@ function buildHeuristicPlan(task: string, agent: AgentMode, answers: Record<stri
 
   if (taskType === "flight") {
     const match = normalizeText(task).match(/from\s+([a-z\s]+?)\s+to\s+([a-z\s]+)/i);
-    if (match) {
+    if (match && match[1] && match[2]) {
       state.from = state.from || capitalizeWords(match[1].trim());
       state.to = state.to || capitalizeWords(match[2].trim());
     }
