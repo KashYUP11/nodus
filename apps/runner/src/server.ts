@@ -717,8 +717,6 @@ async function analyzeScreenshot(base64Data: string, taskDescription: string) {
   if (!gemini) return null;
 
   try {
-    const model = gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
-    
     const prompt = `
       You are looking at a screenshot of a browser search result for the following task: "${taskDescription}".
       
@@ -741,17 +739,25 @@ async function analyzeScreenshot(base64Data: string, taskDescription: string) {
 
     const cleanBase64 = base64Data.split(",")[1] || base64Data;
 
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: cleanBase64,
-          mimeType: "image/jpeg"
+    const result = await gemini.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                data: cleanBase64,
+                mimeType: "image/jpeg"
+              }
+            }
+          ]
         }
-      }
-    ]);
+      ]
+    });
 
-    const rawText = result.response.text();
+    const rawText = result.text?.trim() || "";
     const cleaned = rawText.replace(/```json/i, "").replace(/```/i, "").trim();
     const parsed = JSON.parse(cleaned);
 

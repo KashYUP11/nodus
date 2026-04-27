@@ -7,13 +7,15 @@ const apiKey = process.env.GEMINI_API_KEY;
 console.log("Using API Key:", apiKey ? "FOUND" : "MISSING");
 
 if (apiKey) {
-    const genAI = new GoogleGenAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const client = new GoogleGenAI({ apiKey });
 
     async function test() {
         try {
-            const result = await model.generateContent("Hi");
-            console.log("Success:", result.response.text());
+            const result = await client.models.generateContent({
+                model: "gemini-1.5-flash",
+                contents: "Hi"
+            });
+            console.log("Success:", result.text?.trim());
         } catch (e) {
             console.error("Failed:", e);
         }
