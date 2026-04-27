@@ -111,6 +111,7 @@ type ChatMessage =
         info: string;
         url: string;
       }>;
+      url?: string;
       done?: boolean;
     };
 
@@ -830,6 +831,7 @@ export default function Page() {
                 text: execData.error ? `Error: ${execData.error}` : (execData.message || "Task completed."),
                 screenshot: execData.screenshot,
                 results: execData.results,
+                url: execData.url,
                 done: true
               },
             ];
@@ -945,6 +947,7 @@ export default function Page() {
               text: execData.error ? `Error: ${execData.error}` : (execData.message || "Task completed."),
               screenshot: execData.screenshot,
               results: execData.results,
+              url: execData.url,
               done: true
             },
           ];
@@ -1514,14 +1517,17 @@ export default function Page() {
 
                         {msg.screenshot && (
                           <div style={{ marginTop: 16, width: '100%', border: '1px solid var(--border)', background: '#000', overflow: 'hidden', borderRadius: 4 }}>
-                            <div style={{ padding: '6px 12px', background: 'var(--surface2)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-dim)', borderBottom: '1px solid var(--border)' }}>
-                              BROWSER VIEWPORT (1280x1000)
-                            </div>
-                            <img 
-                              src={msg.screenshot} 
-                              alt="Browser View" 
-                              style={{ width: '100%', height: 'auto', display: 'block' }} 
-                            />
+                            <a href={msg.url || '#'} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', display: 'block' }}>
+                              <div style={{ padding: '6px 12px', background: 'var(--surface2)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-dim)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
+                                <span>BROWSER VIEWPORT (1280x1000)</span>
+                                <span style={{ color: 'var(--accent)' }}>CLICK TO OPEN LIVE PAGE ↗</span>
+                              </div>
+                              <img 
+                                src={msg.screenshot} 
+                                alt="Browser View" 
+                                style={{ width: '100%', height: 'auto', display: 'block' }} 
+                              />
+                            </a>
                           </div>
                         )}
                       </div>

@@ -845,6 +845,12 @@ app.post("/execute", async (req, res) => {
       }
 
       console.log(`Navigating to: ${targetUrl}`);
+      
+      // Use a common User-Agent to reduce bot detection
+      await context.setExtraHTTPHeaders({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+      });
+
       await page.goto(targetUrl, { waitUntil: "networkidle" });
       
       await page.waitForTimeout(3000);
@@ -857,7 +863,8 @@ app.post("/execute", async (req, res) => {
       res.json({
         message: successMessage,
         screenshot: base64Screenshot,
-        results: extractedResults || []
+        results: extractedResults || [],
+        url: targetUrl // Return the URL so the frontend can make the screenshot clickable
       });
     } finally {
       await browser.close();
