@@ -782,36 +782,34 @@ app.post("/execute", async (req, res) => {
   try {
     const isProd = process.env.NODE_ENV === "production";
     
-    console.log(`Starting execution... Mode: ${isProd ? "Headless" : "Headful"}`);
+    console.log(`Starting execution... Mode: ${isProd ? "Headless (Cloud)" : "Headful (Local Window)"}`);
     
     const browser = await chromium.launch({ 
-      headless: isProd,
+      headless: isProd, // This makes a window pop up if you run it locally!
       args: [
         "--no-sandbox", 
         "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-accelerated-2d-canvas",
-        "--no-first-run",
-        "--no-zygote",
-        "--disable-gpu"
+        "--disable-dev-shm-usage"
       ]
     });
 
     try {
       const context = await browser.newContext({
-        viewport: { width: 1280, height: 1000 }
+        viewport: { width: 1280, height: 720 }
       });
       const page = await context.newPage();
 
       let targetUrl = "";
       let successMessage = "";
       let taskDetail = "";
+      let shouldAutoPlayYoutube = false;
 
       if (taskType === "youtube") {
         const songQuery = knownState?.songQuery || "music";
         targetUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(songQuery)}`;
-        successMessage = `I've opened YouTube results for "${songQuery}". Here are the top results:`;
+        successMessage = `I've opened YouTube and started playing "${songQuery}" for you!`;
         taskDetail = `YouTube results for ${songQuery}`;
+        shouldAutoPlayYoutube = true;
       } else if (taskType === "flight") {
         const from = knownState?.from || "";
         const to = knownState?.to || "";
@@ -853,7 +851,31 @@ app.post("/execute", async (req, res) => {
 
       await page.goto(targetUrl, { waitUntil: "networkidle" });
       
-      await page.waitForTimeout(3000);
+      // If it's YouTube, click the first video to start playing
+      let youtubeId = "";
+      if (shouldAutoPlayYoutube) {
+        console.log("Searching for first video to play...");
+        try {
+          await page.waitForSelector("ytd-video-renderer, ytd-grid-video-renderer", { timeout: 5000 });
+          
+          // Get the video ID from the first result
+          youtubeId = await page.evaluate(() => {
+            const link = document.querySelector("ytd-video-renderer a#video-title, ytd-grid-video-renderer a#video-title") as HTMLAnchorElement;
+            if (!link) return "";
+            const url = new URL(link.href);
+            return url.searchParams.get("v") || "";
+          });
+
+          // Click the first video link
+          await page.click("ytd-video-renderer a#video-title, ytd-grid-video-renderer a#video-title");
+          console.log(`Video clicked (ID: ${youtubeId}), waiting for player...`);
+          await page.waitForTimeout(4000); 
+        } catch (e) {
+          console.log("Could not find a video to click, staying on search results.");
+        }
+      } else {
+        await page.waitForTimeout(3000);
+      }
 
       const screenshot = await page.screenshot({ type: "jpeg", quality: 75 });
       const base64Screenshot = `data:image/jpeg;base64,${screenshot.toString("base64")}`;
@@ -864,7 +886,8 @@ app.post("/execute", async (req, res) => {
         message: successMessage,
         screenshot: base64Screenshot,
         results: extractedResults || [],
-        url: targetUrl // Return the URL so the frontend can make the screenshot clickable
+        url: targetUrl,
+        youtubeId: youtubeId // Return the ID for the frontend player
       });
     } finally {
       await browser.close();

@@ -112,6 +112,7 @@ type ChatMessage =
         url: string;
       }>;
       url?: string;
+      youtubeId?: string;
       done?: boolean;
     };
 
@@ -832,6 +833,7 @@ export default function Page() {
                 screenshot: execData.screenshot,
                 results: execData.results,
                 url: execData.url,
+                youtubeId: execData.youtubeId,
                 done: true
               },
             ];
@@ -948,6 +950,7 @@ export default function Page() {
               screenshot: execData.screenshot,
               results: execData.results,
               url: execData.url,
+              youtubeId: execData.youtubeId,
               done: true
             },
           ];
@@ -1515,7 +1518,21 @@ export default function Page() {
                           </div>
                         )}
 
-                        {msg.screenshot && (
+                        {msg.youtubeId && (
+                          <div style={{ marginTop: 16, width: '100%', aspectRatio: '16/9', border: '1px solid var(--border)', background: '#000', overflow: 'hidden', borderRadius: 4 }}>
+                            <iframe 
+                              width="100%" 
+                              height="100%" 
+                              src={`https://www.youtube.com/embed/${msg.youtubeId}?autoplay=1`} 
+                              title="YouTube video player" 
+                              frameBorder="0" 
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                              allowFullScreen
+                            ></iframe>
+                          </div>
+                        )}
+
+                        {msg.screenshot && !msg.youtubeId && (
                           <div style={{ marginTop: 16, width: '100%', border: '1px solid var(--border)', background: '#000', overflow: 'hidden', borderRadius: 4 }}>
                             <a href={msg.url || '#'} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', display: 'block' }}>
                               <div style={{ padding: '6px 12px', background: 'var(--surface2)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-dim)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
