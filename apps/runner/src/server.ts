@@ -4,7 +4,9 @@ import dotenv from "dotenv";
 import { chromium } from "playwright";
 import { GoogleGenAI } from "@google/genai";
 
-dotenv.config({ path: "api_key" });
+dotenv.config(); // Load from .env file
+dotenv.config({ path: "../../api_key.txt" }); // Also try to load from root api_key.txt if present
+
 
 const app = express();
 app.use(cors());
@@ -353,7 +355,7 @@ async function generateJson<T>(prompt: string): Promise<T | null> {
 
   try {
     const response = await gemini.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash",
       contents: prompt
     });
 
@@ -369,6 +371,9 @@ async function generateJson<T>(prompt: string): Promise<T | null> {
     return JSON.parse(cleaned) as T;
   } catch (error) {
     console.error("Gemini JSON generation failed:", error);
+    if (error && typeof error === 'object' && 'status' in error) {
+      console.error(`API Status Code: ${error.status}`);
+    }
     return null;
   }
 }
@@ -653,7 +658,7 @@ app.post("/chat", async (req, res) => {
 
   try {
     const response = await gemini.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash",
       contents: `
 You are NODUS, a cognitive decision intelligence system.
 Answer clearly in at most 3 short paragraphs.
@@ -801,7 +806,8 @@ app.post("/execute", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({
-      message: "Execution failed. Could not open browser."
+      message: "Execution failed. Could not open browser.",
+      error: error instanceof Error ? error.message : String(error)
     });
   }
 });
