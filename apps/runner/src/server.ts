@@ -713,6 +713,59 @@ app.post("/task", async (req, res) => {
   }
 });
 
+async function analyzeScreenshot(base64Data: string, taskDescription: string) {
+  if (!gemini) return null;
+
+  try {
+    const model = gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
+    
+    const prompt = `
+      You are looking at a screenshot of a browser search result for the following task: "${taskDescription}".
+      
+      Extract the top 3-5 results (hotels, flights, or products) from this image.
+      Return ONLY a strict JSON array of objects.
+      
+      Schema:
+      [
+        {
+          "name": "string (name of hotel/flight/item)",
+          "price": "string (including currency if visible)",
+          "rating": "string (e.g. 4.5/5 or 4 stars, if visible)",
+          "info": "string (1 short sentence summary of details like 'near city center' or 'non-stop flight')",
+          "url": "string (if you can see a direct URL, use it. Otherwise, leave as empty string)"
+        }
+      ]
+      
+      If you cannot see any relevant results, return an empty array [].
+    `;
+
+    const cleanBase64 = base64Data.split(",")[1] || base64Data;
+
+    const result = await model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          data: cleanBase64,
+          mimeType: "image/jpeg"
+        }
+      }
+    ]);
+
+    const rawText = result.response.text();
+    const cleaned = rawText.replace(/```json/i, "").replace(/```/i, "").trim();
+    const parsed = JSON.parse(cleaned);
+
+    // If no URL was found by Gemini, construct a search-based booking URL
+    return parsed.map((item: any) => ({
+      ...item,
+      url: item.url || `https://www.google.com/search?q=${encodeURIComponent(item.name + " booking")}`
+    }));
+  } catch (err) {
+    console.error("Screenshot analysis failed:", err);
+    return null;
+  }
+}
+
 app.post("/execute", async (req, res) => {
   const { taskType, knownState, submittedTask } = req.body as {
     taskType: TaskType;
@@ -737,76 +790,77 @@ app.post("/execute", async (req, res) => {
         "--disable-gpu"
       ]
     });
-    const context = await browser.newContext();
-    const page = await context.newPage();
 
-    if (taskType === "youtube") {
-      const songQuery = knownState?.songQuery || "music";
-      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(songQuery)}`;
-      await page.goto(url, { waitUntil: "domcontentloaded" });
-
-      return res.json({
-        message: `Execution started. Fresh browser session opened YouTube results for "${songQuery}". Stop point is after opening playable results.`
+    try {
+      const context = await browser.newContext({
+        viewport: { width: 1280, height: 1000 }
       });
-    }
+      const page = await context.newPage();
 
-    if (taskType === "flight") {
-      const from = knownState?.from || "";
-      const to = knownState?.to || "";
-      const date = knownState?.date || "";
-      const budget = knownState?.budget || "";
-      const platform = knownState?.platform || "Google Flights";
+      let targetUrl = "";
+      let successMessage = "";
+      let taskDetail = "";
 
-      const searchQuery = `${platform} flights from ${from} to ${to} ${date} ${budget}`.trim();
-      const url = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
-      await page.goto(url, { waitUntil: "domcontentloaded" });
+      if (taskType === "youtube") {
+        const songQuery = knownState?.songQuery || "music";
+        targetUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(songQuery)}`;
+        successMessage = `I've opened YouTube results for "${songQuery}". Here are the top results:`;
+        taskDetail = `YouTube results for ${songQuery}`;
+      } else if (taskType === "flight") {
+        const from = knownState?.from || "";
+        const to = knownState?.to || "";
+        const date = knownState?.date || "";
+        const platform = knownState?.platform || "Google Flights";
+        const searchQuery = `${platform} flights from ${from} to ${to} ${date}`.trim();
+        targetUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+        successMessage = `I've found flight options from ${from} to ${to}. You can book them directly here:`;
+        taskDetail = `Flights from ${from} to ${to} on ${date}`;
+      } else if (taskType === "hotel") {
+        const location = knownState?.location || "";
+        const checkIn = knownState?.checkIn || "";
+        const platform = knownState?.platform || "Booking.com";
+        const searchQuery = `${platform} hotel in ${location} ${checkIn}`.trim();
+        targetUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+        successMessage = `I've analyzed the hotel options in ${location}. Here are the best matches for your trip:`;
+        taskDetail = `Hotels in ${location} for ${checkIn}`;
+      } else if (taskType === "food") {
+        const location = knownState?.location || "";
+        const cuisine = knownState?.cuisine || "";
+        const platform = knownState?.platform || "Swiggy";
+        const searchQuery = `${platform} ${cuisine} in ${location}`.trim();
+        targetUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+        successMessage = `I've pulled up ${cuisine} options in ${location}. You can order them here:`;
+        taskDetail = `${cuisine} in ${location}`;
+      } else {
+        const fallbackQuery = submittedTask || "web task";
+        targetUrl = `https://www.google.com/search?q=${encodeURIComponent(fallbackQuery)}`;
+        successMessage = "I've opened a browser session for your task. Here is the current view.";
+        taskDetail = fallbackQuery;
+      }
 
-      return res.json({
-        message: `Execution started. Fresh browser session opened for flight search from ${from} to ${to}. Stop point is before payment.`
+      console.log(`Navigating to: ${targetUrl}`);
+      await page.goto(targetUrl, { waitUntil: "networkidle" });
+      
+      await page.waitForTimeout(3000);
+
+      const screenshot = await page.screenshot({ type: "jpeg", quality: 75 });
+      const base64Screenshot = `data:image/jpeg;base64,${screenshot.toString("base64")}`;
+
+      const extractedResults = await analyzeScreenshot(base64Screenshot, taskDetail);
+
+      res.json({
+        message: successMessage,
+        screenshot: base64Screenshot,
+        results: extractedResults || []
       });
+    } finally {
+      await browser.close();
+      console.log("Browser closed.");
     }
-
-    if (taskType === "hotel") {
-      const location = knownState?.location || "";
-      const checkIn = knownState?.checkIn || "";
-      const budget = knownState?.budget || "";
-      const platform = knownState?.platform || "Booking.com";
-
-      const searchQuery = `${platform} hotel in ${location} ${checkIn} ${budget}`.trim();
-      const url = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
-      await page.goto(url, { waitUntil: "domcontentloaded" });
-
-      return res.json({
-        message: `Execution started. Fresh browser session opened for hotel search in ${location}. Stop point is before payment.`
-      });
-    }
-
-    if (taskType === "food") {
-      const location = knownState?.location || "";
-      const cuisine = knownState?.cuisine || "";
-      const budget = knownState?.budget || "";
-      const platform = knownState?.platform || "Swiggy";
-
-      const searchQuery = `${platform} ${cuisine} in ${location} ${budget}`.trim();
-      const url = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
-      await page.goto(url, { waitUntil: "domcontentloaded" });
-
-      return res.json({
-        message: `Execution started. Fresh browser session opened for food ordering in ${location}. Stop point is before payment.`
-      });
-    }
-
-    const fallbackQuery = submittedTask || "web task";
-    const url = `https://www.google.com/search?q=${encodeURIComponent(fallbackQuery)}`;
-    await page.goto(url, { waitUntil: "domcontentloaded" });
-
-    res.json({
-      message: "Execution started. Fresh browser session opened for the requested task. Stop point is before final confirmation."
-    });
   } catch (error) {
-    console.error(error);
+    console.error("Execution error:", error);
     res.status(500).json({
-      message: "Execution failed. Could not open browser.",
+      message: "Execution failed. Could not complete the browser task.",
       error: error instanceof Error ? error.message : String(error)
     });
   }

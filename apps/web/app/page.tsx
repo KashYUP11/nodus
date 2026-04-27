@@ -103,6 +103,15 @@ type ChatMessage =
       id: string;
       type: "status";
       text: string;
+      screenshot?: string;
+      results?: Array<{
+        name: string;
+        price: string;
+        rating: string;
+        info: string;
+        url: string;
+      }>;
+      done?: boolean;
     };
 
 const AGENTS: AgentCard[] = [
@@ -789,6 +798,16 @@ export default function Page() {
         ]);
 
         if (data.readyForExecution) {
+          const execStatusId = uid();
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: execStatusId,
+              type: "status",
+              text: "NODUS is executing the browser task...",
+            },
+          ]);
+
           const execRes = await fetch(`${API_BASE}/execute`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -800,14 +819,21 @@ export default function Page() {
           });
 
           const execData = await execRes.json();
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: uid(),
-              type: "status",
-              text: execData.error ? `${execData.message} Error: ${execData.error}` : (execData.message || "Execution started."),
-            },
-          ]);
+          setMessages((prev) => {
+            // Remove the "executing" status and previous status messages for this task
+            const filtered = prev.filter(m => m.id !== execStatusId && (m.type !== "status" || m.text.includes("Planning"))); 
+            return [
+              ...filtered,
+              {
+                id: uid(),
+                type: "status",
+                text: execData.error ? `Error: ${execData.error}` : (execData.message || "Task completed."),
+                screenshot: execData.screenshot,
+                results: execData.results,
+                done: true
+              },
+            ];
+          });
         }
       } else {
         setMessages((prev) => [
@@ -889,6 +915,16 @@ export default function Page() {
       );
 
       if (data.readyForExecution) {
+        const execStatusId = uid();
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: execStatusId,
+            type: "status",
+            text: "NODUS is executing the browser task...",
+          },
+        ]);
+
         const execRes = await fetch(`${API_BASE}/execute`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -899,14 +935,20 @@ export default function Page() {
           }),
         });
         const execData = await execRes.json();
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: uid(),
-            type: "status",
-            text: execData.error ? `${execData.message} Error: ${execData.error}` : (execData.message || "Execution started."),
-          },
-        ]);
+        setMessages((prev) => {
+          const filtered = prev.filter(m => m.id !== execStatusId);
+          return [
+            ...filtered,
+            {
+              id: uid(),
+              type: "status",
+              text: execData.error ? `Error: ${execData.error}` : (execData.message || "Task completed."),
+              screenshot: execData.screenshot,
+              results: execData.results,
+              done: true
+            },
+          ];
+        });
       }
     } catch {
       setMessages((prev) => [
@@ -1439,9 +1481,49 @@ export default function Page() {
 
                   if (msg.type === "status") {
                     return (
-                      <div className="typing-ind" key={msg.id}>
-                        <div className="td"><span /><span /><span /></div>
-                        <div className="tl">{msg.text}</div>
+                      <div className={`typing-ind ${msg.done ? "done-status" : ""}`} key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          {!msg.done && <div className="td"><span /><span /><span /></div>}
+                          {msg.done && <div className="srb-dot" />}
+                          <div className="tl">{msg.text}</div>
+                        </div>
+
+                        {msg.results && msg.results.length > 0 && (
+                          <div style={{ marginTop: 16, width: '100%', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+                            {msg.results.map((res, i) => (
+                              <div key={i} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', padding: '12px' }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>{res.name}</div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600 }}>{res.price}</div>
+                                  <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>{res.rating}</div>
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--text-mid)', lineHeight: 1.4, marginBottom: 12 }}>{res.info}</div>
+                                <a 
+                                  href={res.url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="task-submit-btn"
+                                  style={{ display: 'block', textAlign: 'center', textDecoration: 'none', background: 'var(--accent)', color: '#000', fontWeight: 700 }}
+                                >
+                                  Book Now
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {msg.screenshot && (
+                          <div style={{ marginTop: 16, width: '100%', border: '1px solid var(--border)', background: '#000', overflow: 'hidden', borderRadius: 4 }}>
+                            <div style={{ padding: '6px 12px', background: 'var(--surface2)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-dim)', borderBottom: '1px solid var(--border)' }}>
+                              BROWSER VIEWPORT (1280x1000)
+                            </div>
+                            <img 
+                              src={msg.screenshot} 
+                              alt="Browser View" 
+                              style={{ width: '100%', height: 'auto', display: 'block' }} 
+                            />
+                          </div>
+                        )}
                       </div>
                     );
                   }
