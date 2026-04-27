@@ -805,7 +805,7 @@ export default function Page() {
             {
               id: uid(),
               type: "status",
-              text: execData.message || "Execution started.",
+              text: execData.error ? `${execData.message} Error: ${execData.error}` : (execData.message || "Execution started."),
             },
           ]);
         }
@@ -904,7 +904,7 @@ export default function Page() {
           {
             id: uid(),
             type: "status",
-            text: execData.message || "Execution started.",
+            text: execData.error ? `${execData.message} Error: ${execData.error}` : (execData.message || "Execution started."),
           },
         ]);
       }
