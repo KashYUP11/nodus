@@ -618,6 +618,8 @@ app.get("/", (_req, res) => {
   res.json({
     status: "ok",
     message: "NODUS backend is running",
+    version: "1.0.1",
+    lastUpdated: "2026-04-28T01:45:00Z",
     endpoints: ["/reason", "/chat", "/task", "/execute"]
   });
 });
@@ -758,13 +760,26 @@ async function analyzeScreenshot(base64Data: string, taskDescription: string) {
     });
 
     const rawText = result.text?.trim() || "";
-    const cleaned = rawText.replace(/```json/i, "").replace(/```/i, "").trim();
-    const parsed = JSON.parse(cleaned);
+    let cleaned = rawText.replace(/```json/i, "").replace(/```/i, "").trim();
+    
+    // Final fallback: if there's text after the JSON block or weird formatting
+    const jsonMatch = cleaned.match(/\[\s*\{.*\}\s*\]/s);
+    if (jsonMatch) {
+      cleaned = jsonMatch[0];
+    }
+
+    let parsed = [];
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.error("JSON parse failed, returning empty results:", parseErr);
+      return [];
+    }
 
     // If no URL was found by Gemini, construct a search-based booking URL
-    return parsed.map((item: any) => ({
+    return (Array.isArray(parsed) ? parsed : []).map((item: any) => ({
       ...item,
-      url: item.url || `https://www.google.com/search?q=${encodeURIComponent(item.name + " booking")}`
+      url: item.url || `https://www.google.com/search?q=${encodeURIComponent((item.name || "item") + " booking")}`
     }));
   } catch (err) {
     console.error("Screenshot analysis failed:", err);
@@ -842,42 +857,63 @@ app.post("/execute", async (req, res) => {
         taskDetail = fallbackQuery;
       }
 
+      // --- START AUTONOMOUS EXECUTION ---
+      // Update: 2026-04-28 - Integrated YouTube Player Logic
       console.log(`Navigating to: ${targetUrl}`);
       
-      // Use a common User-Agent to reduce bot detection
       await context.setExtraHTTPHeaders({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
       });
 
       await page.goto(targetUrl, { waitUntil: "networkidle" });
       
-      // If it's YouTube, click the first video to start playing
       let youtubeId = "";
       if (shouldAutoPlayYoutube) {
         console.log("Searching for first video to play...");
         try {
-          await page.waitForSelector("ytd-video-renderer, ytd-grid-video-renderer", { timeout: 5000 });
+          // Wait for any video element or renderer
+          await page.waitForSelector("ytd-video-renderer, ytd-grid-video-renderer, a#video-title", { timeout: 10000 });
           
-          // Get the video ID from the first result
           youtubeId = await page.evaluate(() => {
-            const link = document.querySelector("ytd-video-renderer a#video-title, ytd-grid-video-renderer a#video-title") as HTMLAnchorElement;
+            // Try common selectors for the first video title link
+            const link = document.querySelector("ytd-video-renderer a#video-title, ytd-grid-video-renderer a#video-title, a#video-title-link, a#video-title") as HTMLAnchorElement;
             if (!link) return "";
-            const url = new URL(link.href);
-            return url.searchParams.get("v") || "";
+            
+            // Try to get ID from href
+            const href = link.href;
+            if (href) {
+              const url = new URL(href);
+              const v = url.searchParams.get("v");
+              if (v) return v;
+            }
+            
+            // Try to get ID from parent renderer if possible
+            const renderer = link.closest('ytd-video-renderer, ytd-grid-video-renderer');
+            if (renderer) {
+               const data = (renderer as any).data;
+               if (data && data.videoId) return data.videoId;
+            }
+
+            return "";
           });
 
-          // Click the first video link
-          await page.click("ytd-video-renderer a#video-title, ytd-grid-video-renderer a#video-title");
-          console.log(`Video clicked (ID: ${youtubeId}), waiting for player...`);
-          await page.waitForTimeout(4000); 
+          if (youtubeId) {
+            console.log(`Video identified: ${youtubeId}. Opening...`);
+            // Actually click it to trigger play on the server side (even if we embed it, this ensures the server browser is in sync)
+            await page.click("ytd-video-renderer a#video-title, ytd-grid-video-renderer a#video-title, a#video-title-link, a#video-title");
+            await page.waitForTimeout(5000); 
+          } else {
+             console.log("Could not find a YouTube video ID in the top results.");
+          }
         } catch (e) {
-          console.log("Could not find a video to click, staying on search results.");
+          console.log("Auto-play navigation or ID extraction failed:", e);
         }
       } else {
-        await page.waitForTimeout(3000);
+        // Longer wait for generic pages to settle
+        await page.waitForTimeout(5000);
       }
 
-      const screenshot = await page.screenshot({ type: "jpeg", quality: 75 });
+      const screenshot = await page.screenshot({ type: "jpeg", quality: 80 });
       const base64Screenshot = `data:image/jpeg;base64,${screenshot.toString("base64")}`;
 
       const extractedResults = await analyzeScreenshot(base64Screenshot, taskDetail);
@@ -887,8 +923,9 @@ app.post("/execute", async (req, res) => {
         screenshot: base64Screenshot,
         results: extractedResults || [],
         url: targetUrl,
-        youtubeId: youtubeId // Return the ID for the frontend player
+        youtubeId: youtubeId 
       });
+      // --- END AUTONOMOUS EXECUTION ---
     } finally {
       await browser.close();
       console.log("Browser closed.");
